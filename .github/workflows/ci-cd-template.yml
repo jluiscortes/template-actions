@@ -1,0 +1,105 @@
+name: CI/CD Template
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: "Node.js version"
+        required: true
+        type: string
+      app-name:
+        description: "Azure Function App name"
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install dependencies
+        run: npm install # Usa 'ci' para una instalación más rápida y consistente
+
+      - name: Build project
+        run: npm run build --if-present
+
+      - name: Archive build files
+        run: zip -r build.zip .
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: build.zip
+          retention-days: 1
+
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install dependencies
+        run: npm install # Instala dependencias para ejecutar las pruebas
+
+      - name: Run tests
+        run: npm run test --if-present
+        continue-on-error: false # Falla si las pruebas fallan
+
+  code-analysis:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install dependencies
+        run: npm install # Instala dependencias para análisis de código
+
+      - name: Run code analysis
+        run: npm run lint --if-present # Asume que tienes una tarea de 'lint' configurada para análisis estático
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [build, test] # Despliega solo si los jobs 'build' y 'test' se completan correctamente
+    # if: github.ref == 'refs/heads/main'  # Solo despliega desde la rama principal
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build
+          path: .
+
+      - name: Log in to Azure
+        uses: azure/login@v1
+        with:
+          creds: |
+            # Credenciales
+      - name: Deploy to Azure Functions
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ inputs.app-name }}
+          package: "./build.zip"
+
+      - name: Clean up
+        run: rm build.zip # Limpia los archivos de compilación locales
